@@ -1,0 +1,107 @@
+// ============================================================
+// 电商销售数据分析 — Power BI DAX 度量值
+// 用于连接 MySQL 后创建动态仪表板
+// ============================================================
+
+// ---- 核心 KPI ----
+
+// 总 GMV
+Total_GMV = SUM(dwd_order_fact[total_amount])
+
+// 实收金额
+Net_Revenue = SUM(dwd_order_fact[actual_amount])
+
+// 订单总数
+Total_Orders = DISTINCTCOUNT(dwd_order_fact[order_id])
+
+// 客户总数
+Total_Customers = DISTINCTCOUNT(dwd_order_fact[customer_id])
+
+// 客单价
+Avg_Order_Value = DIVIDE([Total_GMV], [Total_Orders])
+
+// 复购率
+Repurchase_Rate =
+VAR Repeat_Customers =
+    CALCULATE(
+        DISTINCTCOUNT(dwd_order_fact[customer_id]),
+        FILTER(
+            VALUES(dwd_order_fact[customer_id]),
+            CALCULATE(DISTINCTCOUNT(dwd_order_fact[order_id])) >= 2
+        )
+    )
+RETURN DIVIDE(Repeat_Customers, [Total_Customers])
+
+
+// ---- 时间智能 ----
+
+// 环比 GMV 增长率
+GMV_MoM_Growth =
+VAR CurrentMonth = [Total_GMV]
+VAR PrevMonth =
+    CALCULATE([Total_GMV], DATEADD(dim_date[date_id], -1, MONTH))
+RETURN DIVIDE(CurrentMonth - PrevMonth, PrevMonth)
+
+// 同比 GMV 增长率
+GMV_YoY_Growth =
+VAR CurrentYear = [Total_GMV]
+VAR PrevYear =
+    CALCULATE([Total_GMV], SAMEPERIODLASTYEAR(dim_date[date_id]))
+RETURN DIVIDE(CurrentYear - PrevYear, PrevYear)
+
+
+// ---- 客群分析 ----
+
+// 高价值客户数 (RFM 755-555 分级)
+High_Value_Customers =
+CALCULATE(
+    DISTINCTCOUNT(dws_customer_behavior[customer_id]),
+    dws_customer_behavior[monetary] >= 2000
+)
+
+// 高价值客户 GMV 贡献
+High_Value_GMV_Share =
+DIVIDE(
+    CALCULATE([Total_GMV],
+        dws_customer_behavior[monetary] >= 2000
+    ),
+    [Total_GMV]
+)
+
+
+// ---- 促销分析 ----
+
+// 促销参与率
+Promo_Rate =
+DIVIDE(
+    CALCULATE([Total_Orders], dwd_order_fact[is_promotion] = 1),
+    [Total_Orders]
+)
+
+// 促销 ROI
+Promotion_ROI =
+DIVIDE(
+    SUM(dwd_order_fact[total_amount]),
+    SUMX(dwd_order_fact,
+        dwd_order_fact[total_amount] * dwd_order_fact[discount_rate]
+    )
+)
+
+
+// ---- 同期群留存 ----
+
+// 同期群首月留存率
+Cohort_Retention_1M =
+VAR CohortSize =
+    CALCULATE(
+        DISTINCTCOUNT(dws_customer_behavior[customer_id]),
+        ALLEXCEPT(dws_customer_behavior, dws_customer_behavior[cohort_month])
+    )
+VAR Retained1M =
+    CALCULATE(
+        DISTINCTCOUNT(dws_customer_behavior[customer_id]),
+        FILTER(dws_customer_behavior,
+            dws_customer_behavior[total_orders] >= 2
+        )
+    )
+RETURN DIVIDE(Retained1M, CohortSize)
